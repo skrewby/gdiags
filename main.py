@@ -4,7 +4,6 @@ from typing import Callable
 import sv_ttk
 from serial_handler import SerialHandler
 
-
 class AxisControl(ttk.LabelFrame):
     def __init__(self, parent: ttk.Widget | ttk.Frame, label: str, on_send: Callable[[str], None], menu_access: list[str]):
         super().__init__(parent, text=label, padding=10)
@@ -84,7 +83,13 @@ class App:
         self.serial.on_data = self._on_serial_data
         self.serial.on_error = self._on_error
 
-        axis_frame = ttk.Frame(root)
+        tabs = ttk.Notebook(root)
+        tabs.pack(pady=10, padx=10, fill=tk.X)
+
+        axes_tab = ttk.Frame(tabs)
+        tabs.add(axes_tab, text="Axes")
+
+        axis_frame = ttk.Frame(axes_tab)
         axis_frame.pack(pady=10, padx=10)
         self.axis1: AxisControl = AxisControl(axis_frame, "Axis 1", self.serial.send, ["m", "a"])
         self.axis1.pack(side=tk.LEFT, padx=5)
@@ -94,6 +99,12 @@ class App:
         self.axis3.pack(side=tk.LEFT, padx=5)
         self.axis4: AxisControl = AxisControl(axis_frame, "Axis 4", self.serial.send, ["m", "d"])
         self.axis4.pack(side=tk.LEFT, padx=5)
+
+        utils_tab = ttk.Frame(tabs)
+        tabs.add(utils_tab, text="Utils")
+
+        placeholder = ttk.LabelFrame(utils_tab, text="Utils", padding=10)
+        placeholder.pack(pady=10, padx=10, fill=tk.BOTH, expand=True)
 
         self.terminal: Terminal = Terminal(root, self.serial.send)
         self.terminal.pack(padx=10, pady=10, fill=tk.BOTH, expand=True)
