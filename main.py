@@ -2,6 +2,7 @@ import tkinter as tk
 from tkinter import ttk, messagebox
 from typing import Callable
 import sv_ttk
+import serial.tools.list_ports
 from serial_handler import SerialHandler
 
 class AxisControl(ttk.LabelFrame):
@@ -74,6 +75,70 @@ class Terminal(ttk.Frame):
         self.text.see(tk.END)
 
 
+class ConnectionManager(ttk.Frame):
+    def __init__(self, parent: tk.Widget, serial_handler: SerialHandler):
+        super().__init__(parent, padding=10)
+
+        self.serial: SerialHandler = serial_handler
+        self.serial.on_connect = self._on_connect
+        self.serial.on_disconnect = self._on_disconnect
+
+        port_frame = ttk.Frame(self)
+        port_frame.pack(fill=tk.X, pady=5)
+
+        ttk.Label(port_frame, text="Port:").pack(side=tk.LEFT, padx=(0, 5))
+        self.port_var: tk.StringVar = tk.StringVar()
+        self.port_combo: ttk.Combobox = ttk.Combobox(port_frame, textvariable=self.port_var, width=20)
+        self.port_combo.pack(side=tk.LEFT, padx=(0, 5))
+
+        self.refresh_btn: ttk.Button = ttk.Button(port_frame, text="Refresh", command=self._refresh_ports)
+        self.refresh_btn.pack(side=tk.LEFT)
+
+        baud_frame = ttk.Frame(self)
+        baud_frame.pack(fill=tk.X, pady=5)
+
+        ttk.Label(baud_frame, text="Baud:").pack(side=tk.LEFT, padx=(0, 5))
+        self.baud_var: tk.StringVar = tk.StringVar(value="115200")
+        self.baud_entry: ttk.Entry = ttk.Entry(baud_frame, textvariable=self.baud_var, width=10)
+        self.baud_entry.pack(side=tk.LEFT)
+
+        self.connect_btn: ttk.Button = ttk.Button(self, text="Connect", command=self._toggle_connection)
+        self.connect_btn.pack(pady=10)
+
+        self._refresh_ports()
+
+    def _refresh_ports(self):
+        ports = [port.device for port in serial.tools.list_ports.comports()]
+        self.port_combo["values"] = ports
+        if ports and not self.port_var.get():
+            self.port_var.set(ports[0])
+
+    def _toggle_connection(self):
+        if self.serial.is_connected:
+            self.serial.disconnect()
+        else:
+            port = self.port_var.get()
+            try:
+                baud = int(self.baud_var.get())
+            except ValueError:
+                _ = messagebox.showerror("Invalid Baud Rate", "Only integer values accepted")
+                return
+            if port:
+                self.serial.connect(port, baud)
+
+    def _on_connect(self):
+        _ = self.connect_btn.config(text="Disconnect")
+        _ = self.port_combo.config(state="disabled")
+        _ = self.baud_entry.config(state="disabled")
+        _ = self.refresh_btn.config(state="disabled")
+
+    def _on_disconnect(self):
+        _ = self.connect_btn.config(text="Connect")
+        _ = self.port_combo.config(state="normal")
+        _ = self.baud_entry.config(state="normal")
+        _ = self.refresh_btn.config(state="normal")
+
+
 class App:
     def __init__(self, root: tk.Tk):
         self.root: tk.Tk = root
@@ -86,11 +151,16 @@ class App:
         tabs = ttk.Notebook(root)
         tabs.pack(pady=10, padx=10, fill=tk.X)
 
+        connection_tab = ttk.Frame(tabs)
+        tabs.add(connection_tab, text="Connection")
+
+        self.connection: ConnectionManager = ConnectionManager(connection_tab, self.serial)
+        self.connection.pack(pady=10, padx=10)
+
         axes_tab = ttk.Frame(tabs)
         tabs.add(axes_tab, text="Axes")
-
         axis_frame = ttk.Frame(axes_tab)
-        axis_frame.pack(pady=10, padx=10)
+        axis_frame.place(relx=0.5, rely=0.5, anchor=tk.CENTER)
         self.axis1: AxisControl = AxisControl(axis_frame, "Axis 1", self.serial.send, ["m", "a"])
         self.axis1.pack(side=tk.LEFT, padx=5)
         self.axis2: AxisControl = AxisControl(axis_frame, "Axis 2", self.serial.send, ["m", "b"])
@@ -108,8 +178,6 @@ class App:
 
         self.terminal: Terminal = Terminal(root, self.serial.send)
         self.terminal.pack(padx=10, pady=10, fill=tk.BOTH, expand=True)
-
-        self.serial.connect("/dev/pts/6")
 
     def _on_serial_data(self, data: str):
         _ = self.root.after(0, lambda: self.terminal.append(data))

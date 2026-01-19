@@ -13,13 +13,21 @@ class SerialHandler:
         # Callbacks
         self.on_data: Callable[[str], None] | None = None
         self.on_error: Callable[[Exception], None] | None = None
+        self.on_connect: Callable[[], None] | None = None
+        self.on_disconnect: Callable[[], None] | None = None
 
-    def connect(self, port: str, baudrate: int=115200):
+    @property
+    def is_connected(self) -> bool:
+        return self.serial_port is not None and self.serial_port.is_open
+
+    def connect(self, port: str, baudrate: int = 115200):
         try:
             self.serial_port = serial.Serial(port, baudrate, timeout=0.5)
             self.running = True
             threading.Thread(target=self._read_thread, daemon=True).start()
             threading.Thread(target=self._write_thread, daemon=True).start()
+            if self.on_connect:
+                self.on_connect()
         except Exception as e:
             if self.on_error:
                 self.on_error(e)
@@ -29,8 +37,12 @@ class SerialHandler:
         if self.serial_port:
             self.serial_port.close()
             self.serial_port = None
+        if self.on_disconnect:
+            self.on_disconnect()
 
     def send(self, data: str):
+        if not self.is_connected:
+            return
         self.w_queue.put(item=data, block=True, timeout=5)
 
     def _read_thread(self):
