@@ -1,6 +1,6 @@
 import tkinter as tk
-from tkinter import ttk, messagebox
-from typing import Callable
+from tkinter import ttk, messagebox, filedialog
+from typing import Callable, TextIO
 import sv_ttk
 import serial.tools.list_ports
 from serial_handler import SerialHandler
@@ -139,6 +139,44 @@ class ConnectionManager(ttk.Frame):
         _ = self.refresh_btn.config(state="normal")
 
 
+class LoggingControl(ttk.LabelFrame):
+    def __init__(self, parent: tk.Widget, on_start: Callable[[str], None], on_stop: Callable[[], None]):
+        super().__init__(parent, text="Serial Logging", padding=10)
+
+        self.on_start: Callable[[str], None] = on_start
+        self.on_stop: Callable[[], None] = on_stop
+        self.log_path: str | None = None
+
+        self.path_label: ttk.Label = ttk.Label(self, text="No file selected")
+        self.path_label.pack(pady=(0, 10))
+
+        btn_frame = ttk.Frame(self)
+        btn_frame.pack()
+
+        self.start_btn: ttk.Button = ttk.Button(btn_frame, text="Start Log", command=self._start_logging)
+        self.start_btn.pack(side=tk.LEFT, padx=5)
+
+        self.stop_btn: ttk.Button = ttk.Button(btn_frame, text="Stop Log", command=self._stop_logging, state="disabled")
+        self.stop_btn.pack(side=tk.LEFT, padx=5)
+
+    def _start_logging(self):
+        path = filedialog.asksaveasfilename(
+            defaultextension=".log",
+            filetypes=[("Log files", "*.log"), ("Text files", "*.txt"), ("All files", "*.*")]
+        )
+        if path:
+            self.log_path = path
+            _ = self.path_label.config(text=path)
+            _ = self.start_btn.config(state="disabled")
+            _ = self.stop_btn.config(state="normal")
+            self.on_start(path)
+
+    def _stop_logging(self):
+        _ = self.start_btn.config(state="normal")
+        _ = self.stop_btn.config(state="disabled")
+        self.on_stop()
+
+
 class App:
     def __init__(self, root: tk.Tk):
         self.root: tk.Tk = root
@@ -147,6 +185,8 @@ class App:
         self.serial: SerialHandler = SerialHandler()
         self.serial.on_data = self._on_serial_data
         self.serial.on_error = self._on_error
+
+        self.log_file: TextIO | None = None
 
         tabs = ttk.Notebook(root)
         tabs.pack(pady=10, padx=10, fill=tk.X)
@@ -173,14 +213,28 @@ class App:
         utils_tab = ttk.Frame(tabs)
         tabs.add(utils_tab, text="Utils")
 
-        placeholder = ttk.LabelFrame(utils_tab, text="Utils", padding=10)
-        placeholder.pack(pady=10, padx=10, fill=tk.BOTH, expand=True)
+        self.logging_control: LoggingControl = LoggingControl(utils_tab, self._start_logging, self._stop_logging)
+        self.logging_control.pack(pady=10, padx=10)
 
         self.terminal: Terminal = Terminal(root, self.serial.send)
         self.terminal.pack(padx=10, pady=10, fill=tk.BOTH, expand=True)
 
     def _on_serial_data(self, data: str):
-        _ = self.root.after(0, lambda: self.terminal.append(data))
+        _ = self.root.after(0, lambda: self._handle_serial_data(data))
+
+    def _handle_serial_data(self, data: str):
+        self.terminal.append(data)
+        if self.log_file:
+            _ = self.log_file.write(data)
+            self.log_file.flush()
+
+    def _start_logging(self, path: str):
+        self.log_file = open(path, "a", encoding="utf-8")
+
+    def _stop_logging(self):
+        if self.log_file:
+            self.log_file.close()
+            self.log_file = None
 
     def _on_error(self, e: Exception):
         _ = self.root.after(0, lambda: self.terminal.append(f"Diags App Error: {e}\n"))
